@@ -22,38 +22,40 @@
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
+#define DPAD 1
+
 namespace SteerLib
 {
-	AStarPlanner::AStarPlanner(){}
+	AStarPlanner::AStarPlanner() {}
 
-	AStarPlanner::~AStarPlanner(){}
+	AStarPlanner::~AStarPlanner() {}
 
-	bool AStarPlanner::canBeTraversed ( int id ) 
+	bool AStarPlanner::canBeTraversed(int id)
 	{
 		double traversal_cost = 0;
 		int current_id = id;
-		unsigned int x,z;
+		unsigned int x, z;
 		gSpatialDatabase->getGridCoordinatesFromIndex(current_id, x, z);
 		int x_range_min, x_range_max, z_range_min, z_range_max;
 
-		x_range_min = MAX(x-OBSTACLE_CLEARANCE, 0);
-		x_range_max = MIN(x+OBSTACLE_CLEARANCE, gSpatialDatabase->getNumCellsX());
+		x_range_min = MAX(x - OBSTACLE_CLEARANCE, 0);
+		x_range_max = MIN(x + OBSTACLE_CLEARANCE, gSpatialDatabase->getNumCellsX());
 
-		z_range_min = MAX(z-OBSTACLE_CLEARANCE, 0);
-		z_range_max = MIN(z+OBSTACLE_CLEARANCE, gSpatialDatabase->getNumCellsZ());
+		z_range_min = MAX(z - OBSTACLE_CLEARANCE, 0);
+		z_range_max = MIN(z + OBSTACLE_CLEARANCE, gSpatialDatabase->getNumCellsZ());
 
 
-		for (int i = x_range_min; i<=x_range_max; i+=GRID_STEP)
+		for (int i = x_range_min; i <= x_range_max; i += GRID_STEP)
 		{
-			for (int j = z_range_min; j<=z_range_max; j+=GRID_STEP)
+			for (int j = z_range_min; j <= z_range_max; j += GRID_STEP)
 			{
-				int index = gSpatialDatabase->getCellIndexFromGridCoords( i, j );
-				traversal_cost += gSpatialDatabase->getTraversalCost ( index );
-				
+				int index = gSpatialDatabase->getCellIndexFromGridCoords(i, j);
+				traversal_cost += gSpatialDatabase->getTraversalCost(index);
+
 			}
 		}
 
-		if ( traversal_cost > COLLISION_COST ) 
+		if (traversal_cost > COLLISION_COST)
 			return false;
 		return true;
 	}
@@ -67,14 +69,148 @@ namespace SteerLib
 		return p;
 	}
 
+	double AStarPlanner::Heuristic(Util::Point a, Util::Point b)
+	{
+		// Add Euclidean later
+		return abs(a.x - b.x) + abs(a.y - b.y) + abs(a.z - b.z);
+	}
 
+	int AStarPlanner::GetPosition(std::vector<int> openset, std::map<int, double> g_score, std::map<int, double> f_score)
+	{
+		// set lowest f to first
+		double lowest_f = f_score.begin()->second;
+		int pos = 0;
 
-	bool AStarPlanner::computePath(std::vector<Util::Point>& agent_path,  Util::Point start, Util::Point goal, SteerLib::GridDatabase2D * _gSpatialDatabase, bool append_to_path)
+		for (int i = 0; i < openset.size(); i++) {
+			if (f_score[i] < lowest_f) {
+				pos = i;
+				lowest_f = f_score[i];
+			}
+		}
+
+		return pos;
+	}
+
+	std::set<int> AStarPlanner::GetNeighbors(int curr)
+	{
+		unsigned int i, j;
+		gSpatialDatabase->getGridCoordinatesFromIndex(curr, i, j);
+
+		std::set<int> neighbors;
+		
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i - 1, j));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i + 1, j));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i, j - 1));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i, j + 1));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i - 1, j - 1));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i - 1, j + 1));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i + 1, j - 1));
+		neighbors.insert(gSpatialDatabase->getCellIndexFromGridCoords(i + 1, j + 1));
+
+		return neighbors;
+	}
+
+	int AStarPlanner::GetLowestFPosition(std::set<int> openset, std::map<int, double> g_score, std::map<int, double> f_score)
+	{
+		double lowest_f = 1000000000000;
+		double g = 1000000000000;
+		int pos;
+
+		std::set<int>::iterator iter;
+		for (iter = openset.begin(); iter != openset.end(); iter++) {
+			int ptr = *iter;
+			
+			if (lowest_f > f_score[ptr] || (lowest_f == f_score[ptr] && g > g_score[ptr])) {
+				lowest_f = f_score[ptr];
+				g = g_score[ptr];
+				pos = ptr;
+			}
+			
+		}
+
+		return pos;
+	}
+	
+	std::vector<Util::Point> AStarPlanner::reconstruct(std::map<int, int> camefrom, int curr)
+	{
+		std::vector<Util::Point> totalpath;
+		int ptr = curr;
+		totalpath.push_back(getPointFromGridIndex(curr));
+		while (camefrom.count(ptr)) {
+			ptr = camefrom[ptr];
+			totalpath.insert(totalpath.begin(), getPointFromGridIndex(ptr));
+		}
+
+		return totalpath;
+	}
+
+	bool AStarPlanner::computePath(std::vector<Util::Point>& agent_path, Util::Point start, Util::Point goal, SteerLib::GridDatabase2D * _gSpatialDatabase, bool append_to_path)
 	{
 		gSpatialDatabase = _gSpatialDatabase;
 
 		//TODO
-		std::cout<<"\nIn A*";
+		//std::cout << "\nIn A*";
+		
+		// init sets
+		std::set<int> openset, closedset, neighbors;
+		std::map<int, int> camefrom;
+		std::map<int, double> g_score, f_score;
+
+		// node setup
+		int startindex = gSpatialDatabase->getCellIndexFromLocation(start);
+		int goalindex = gSpatialDatabase->getCellIndexFromLocation(goal);
+		Util::Point startpoint = getPointFromGridIndex(startindex);
+		Util::Point goalpoint = getPointFromGridIndex(goalindex);
+		double start_g = 0;
+		double start_h = Heuristic(startpoint, goalpoint);
+		double start_f = start_g + start_h;
+
+		// add start node to sets
+		openset.insert(startindex);
+		g_score.insert(std::pair<int, double>(startindex, start_g));
+		f_score.insert(std::pair<int, double>(startindex, start_f));
+
+		printf("\n*******\n");
+		printf("start: %d\n", startindex);
+		printf("goal: %d\n", goalindex);
+		printf("*******\n");
+
+		while (!openset.empty()) {
+			int curr = GetLowestFPosition(openset, g_score, f_score);
+
+			Util::Point currpoint = getPointFromGridIndex(curr);
+			if (curr == goalindex) {
+				printf("GOAL\n");
+				agent_path = reconstruct(camefrom, curr);
+				return true;
+			}
+
+			openset.erase(curr);
+			closedset.insert(curr);
+
+			std::set<int> neighbors = GetNeighbors(curr);
+			for (std::set<int>::iterator iter = neighbors.begin(); iter != neighbors.end(); iter++) {
+				int neighbor = *iter;
+				Util::Point neighborpoint = getPointFromGridIndex(neighbor);
+
+				if (closedset.count(neighbor) == 1)
+					continue;
+
+				if (!canBeTraversed(neighbor))
+					continue;
+
+				double tent_g = g_score[curr] + DPAD;
+
+				if (g_score.count(neighbor) == 0 || tent_g < g_score[neighbor]) {
+					camefrom[neighbor] = curr;
+					g_score[neighbor] = tent_g;
+					f_score[neighbor] = g_score[neighbor] + Heuristic(neighborpoint, goalpoint);
+
+					openset.insert(neighbor);
+				}
+			}
+		}
+
 
 		return false;
 	}
