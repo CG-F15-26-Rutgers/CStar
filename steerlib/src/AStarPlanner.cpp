@@ -27,6 +27,16 @@
 // 2 --> Euclidean
 #define HEURISTIC 2
 
+//Set ot true to activate part 3
+#define PART_3 false
+#define largerDiagCost 3
+
+//Set to true to activate part 4
+#define PART_4 false
+#define H_1 2
+#define H_2 4
+#define H_3 8
+
 namespace SteerLib
 {
 	AStarPlanner::AStarPlanner() {}
@@ -213,6 +223,10 @@ namespace SteerLib
 				// add this ish
 				camefrom[neighbor] = curr;
 				g_score[neighbor] = tent_g;
+				if (PART_4)
+				{
+					double neighbor_h = H_3 * Heuristic(neighborpoint, goalpoint);
+				}
 				double neighbor_h = Heuristic(neighborpoint, goalpoint);
 				f_score[neighbor] = g_score[neighbor] + neighbor_h;
 			}
