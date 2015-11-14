@@ -98,11 +98,11 @@ namespace SteerLib
 		*/
 
 		bool computePath(std::vector<Util::Point>& agent_path, Util::Point start, Util::Point goal, SteerLib::GridDatabase2D * _gSpatialDatabase, bool append_to_path = false);
+		double  Manhattan(Util::Point a, Util::Point b);
+		double  Euclidean(Util::Point a, Util::Point b);
 		double Heuristic(Util::Point a, Util::Point b);
-		int GetPosition(std::vector<int> openset, std::map<int, double> g_score, std::map<int, double> f_score);
 		std::set<int> GetNeighbors(int curr);
 		int GetLowestFPosition(std::set<int> openst, std::map<int, double> g_score, std::map<int, double> f_score);
-		std::set<int> getNeighborsForNodeIndex(SteerLib::GridDatabase2D * _gSpatialDatabase, int nodeIndex);
 		std::vector<Util::Point> reconstruct(std::map<int, int> camefrom, int curr);
 
 	private:

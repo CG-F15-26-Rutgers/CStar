@@ -23,6 +23,9 @@
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
 #define DPAD 1
+// 1 --> Manhattan
+// 2 --> Euclidean
+#define HEURISTIC 2
 
 namespace SteerLib
 {
@@ -69,26 +72,27 @@ namespace SteerLib
 		return p;
 	}
 
-	double AStarPlanner::Heuristic(Util::Point a, Util::Point b)
+	double AStarPlanner::Manhattan(Util::Point a, Util::Point b)
 	{
-		// Add Euclidean later
 		return abs(a.x - b.x) + abs(a.y - b.y) + abs(a.z - b.z);
 	}
 
-	int AStarPlanner::GetPosition(std::vector<int> openset, std::map<int, double> g_score, std::map<int, double> f_score)
+	double AStarPlanner::Euclidean(Util::Point a, Util::Point b)
 	{
-		// set lowest f to first
-		double lowest_f = f_score.begin()->second;
-		int pos = 0;
+		Util::Vector mathStuff = b - a;
 
-		for (int i = 0; i < openset.size(); i++) {
-			if (f_score[i] < lowest_f) {
-				pos = i;
-				lowest_f = f_score[i];
-			}
-		}
+		return sqrt(pow(mathStuff.x, 2) + pow(mathStuff.z, 2));
+	}
 
-		return pos;
+	// To change Heuristic go to the HEURISTIC definition
+	// 1 for Manhattan
+	// 2 for Euclidean
+	double AStarPlanner::Heuristic(Util::Point a, Util::Point b)
+	{
+		if (HEURISTIC == 1)
+			return Manhattan(a, b);
+		else
+			return Euclidean(a, b);
 	}
 
 	std::set<int> AStarPlanner::GetNeighbors(int curr)
@@ -112,20 +116,16 @@ namespace SteerLib
 
 	int AStarPlanner::GetLowestFPosition(std::set<int> openset, std::map<int, double> g_score, std::map<int, double> f_score)
 	{
-		double lowest_f = 1000000000000;
-		double g = 1000000000000;
+		double lowest_f = 1000000000000000000;
 		int pos;
 
-		std::set<int>::iterator iter;
-		for (iter = openset.begin(); iter != openset.end(); iter++) {
+		for (std::set<int>::iterator iter = openset.begin(); iter != openset.end(); iter++) {
 			int ptr = *iter;
 			
-			if (lowest_f > f_score[ptr] || (lowest_f == f_score[ptr] && g > g_score[ptr])) {
+			if (f_score[ptr] < lowest_f) {
 				lowest_f = f_score[ptr];
-				g = g_score[ptr];
 				pos = ptr;
 			}
-			
 		}
 
 		return pos;
@@ -134,8 +134,10 @@ namespace SteerLib
 	std::vector<Util::Point> AStarPlanner::reconstruct(std::map<int, int> camefrom, int curr)
 	{
 		std::vector<Util::Point> totalpath;
+
 		int ptr = curr;
 		totalpath.push_back(getPointFromGridIndex(curr));
+		
 		while (camefrom.count(ptr)) {
 			ptr = camefrom[ptr];
 			totalpath.insert(totalpath.begin(), getPointFromGridIndex(ptr));
@@ -193,21 +195,26 @@ namespace SteerLib
 				int neighbor = *iter;
 				Util::Point neighborpoint = getPointFromGridIndex(neighbor);
 
-				if (closedset.count(neighbor) == 1)
-					continue;
-
-				if (!canBeTraversed(neighbor))
+				if (closedset.count(neighbor) == 1 || !canBeTraversed(neighbor))
 					continue;
 
 				double tent_g = g_score[curr] + DPAD;
 
-				if (g_score.count(neighbor) == 0 || tent_g < g_score[neighbor]) {
-					camefrom[neighbor] = curr;
-					g_score[neighbor] = tent_g;
-					f_score[neighbor] = g_score[neighbor] + Heuristic(neighborpoint, goalpoint);
-
+				// check if neighbor in openset
+				if (openset.count(neighbor) == 0) {
+					// new node
 					openset.insert(neighbor);
 				}
+				else if (tent_g >= g_score[neighbor]) {
+					// this path sucks don't do anything
+					continue;
+				}
+
+				// add this ish
+				camefrom[neighbor] = curr;
+				g_score[neighbor] = tent_g;
+				double neighbor_h = Heuristic(neighborpoint, goalpoint);
+				f_score[neighbor] = g_score[neighbor] + neighbor_h;
 			}
 		}
 
